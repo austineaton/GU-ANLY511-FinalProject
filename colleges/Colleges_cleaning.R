@@ -11,18 +11,23 @@ library(ggplot2)
 colleges <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/colleges.csv")
 attendance <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/college_attendance.csv", na.strings=c("","NA"))
 mask_use <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/MaskUse.csv")
+election_results <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/countypres_2000-2020.csv")
 
 head(colleges)
 head(attendance)
 head(mask_use)
+head(election_results)
 
 # Basic summary statistics and structure
 summary(colleges)
 summary(attendance)
 summary(mask_use)
+summary(election_results)
 
 ## # 1. Fix column names
 names(attendance) <- c("rank2020", "rank2015", "college", "enroll2020", "enroll2015")
+names(election_results) <- c("year", "state", "state_abbr", "county", "fips", "office", "candidate", "party", "candidatevotes",
+                             "totalvotes", "version", "mode")
 
 ## 2. Remove unnecessary columns
 # colleges --> remove cases2021 (only interested in total cases) and notes (extraneous), date (all on 5/26/2021)
@@ -32,6 +37,12 @@ colleges <- colleges %>%
 # mask_use --> remove fips code (not used for join), abr (not useful)
 mask_use <- mask_use %>%
   select(-c(fips, abbr))
+
+# election_results --> remove state_abbr, fips, office, totalvotes, version, mode
+election_results <- election_results %>%
+  filter(year == 2020) %>%  # just 2020 results
+  select(-c(year, state_abbr, fips, office, totalvotes, version, mode))
+
 
 ## 4. Missing/incorrect values
 # Colleges dataframe
@@ -49,7 +60,12 @@ attendance$enroll2015[attendance$enroll2015=="No Change"] <- NA
 sum(is.na(attendance)) # 20 NAs
 
 # Mask Use dataframe
-sum(is.na(mask_use))
+sum(is.na(mask_use)) # No NAs
+
+# ElectionResults dataframe
+sum(is.na(election_results)) # 1 NA
+election_results <- election_results %>%
+  drop_na(candidatevotes)
 
 # FIX NAs
 sum(is.na(attendance$enroll2020))
@@ -88,11 +104,35 @@ attendance$enroll2015[is.na(attendance$enroll2015)] <- median(attendance$enroll2
 sum(is.na(attendance$enroll2015))
 
 
+###### Clean Election Results further to prep for join
+# Fix capitalization of election results
+election_results <- election_results %>%
+  mutate(state = str_to_title(state)) %>%
+  mutate(county = str_to_title(county)) %>%
+  mutate(candidate = str_to_title(candidate)) %>%
+  mutate(party = str_to_title(party))
+
+head(election_results)
+
+# Calculate one winner for each county
+election_results <- election_results %>%
+  group_by(county,state) %>%
+  mutate(winner = party[which.max(candidatevotes)])
+
+# Keep only row of winner for each county
+election_results <- election_results %>%
+  group_by(county, state) %>%
+  filter(party == winner) %>%
+  select(-c(candidate, party, candidatevotes))
+
+head(election_results)
+
 
 ##################
 # Join
 colleges_full <- inner_join(colleges, attendance, by = "college" )
 colleges_full <- left_join(colleges_full, mask_use, by = c("county", "state"))
+colleges_full <- left_join(colleges_full, election_results, by = c("county", "state"))
 head(colleges_full)
 str(colleges_full)
 
@@ -104,3 +144,4 @@ colleges_full <- colleges_full %>%
 
 
 
+write.csv(colleges_full, "~/Desktop/colleges_cleaned.csv")
