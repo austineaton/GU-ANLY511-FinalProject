@@ -142,6 +142,7 @@ colleges_full <- colleges_full %>%
   mutate(perc_enroll_change = (enroll2020 - enroll2015)/enroll2015) %>%
   mutate(case_rate = cases/enroll2020)
 
-
+# Remove any duplicate rows
+colleges_full = colleges_full[!duplicated(colleges_full$ipeds_id), ]
 
 write.csv(colleges_full, "~/Desktop/colleges_cleaned.csv")
