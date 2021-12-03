@@ -1,0 +1,127 @@
+---
+title: "cleaning_prisons_data"
+author: "Austin Eaton"
+date: "12/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(ggplot2)
+library(readxl)
+library(dplyr)
+```
+
+
+
+
+```{r results='hold'}
+## read in Population data for each county and clean
+
+header.true <- function(df) {
+  names(df) <- as.character(unlist(df[1,]))
+  df[-1,]
+}
+PopulationEstimates <- read_excel("PopulationEstimates.xlsx")
+Unemployment <- read_excel("Unemployment.xlsx")
+
+PopulationEstimates<-header.true(PopulationEstimates)
+Unemployment<-header.true(header.true(header.true(header.true(Unemployment))))
+# names(PopulationEstimates)
+pop_est2020 <- as.data.frame(c(PopulationEstimates[,"FIPStxt"], PopulationEstimates[,"Population 2020"]))
+names(pop_est2020)[1] <- "facility_county_fips"
+
+
+
+unemploy_2020 <- as.data.frame(c(Unemployment[,"FIPS_Code"], Unemployment[,"Unemployment_rate_2020"]))
+names(unemploy_2020)[1] <- "facility_county_fips"
+
+
+pop_stats <- merge(pop_est2020, unemploy_2020, by = "facility_county_fips")
+```
+
+## Read in other supplementary files
+```{r}
+## read in political leaning of each state
+state_politics<-read.csv("partisan_lean_STATES_2020.csv")
+
+
+
+## read in political leaning of each county
+county_politics <- read.csv("/Users/austineaton/Documents/GitHub/GU-ANLY511-FinalProject/elections_cleaned.csv")
+names(county_politics)
+keeps <- c("state","county","winner")
+county_politics <- county_politics[,names(county_politics) %in% keeps]
+names(county_politics)
+```
+
+
+
+# Read in Files
+1. facilities.csv
+2. systems.csv
+
+
+## Facilities
+```{r}
+facilities <- read.csv("prisons/facilities.csv")
+# facilities2 <- merge(pop_stats, facilities, by = "facility_county_fips")
+facilities2 <- facilities
+
+# facilities2$Population.2020 <- as.numeric(facilities2$Population.2020)
+names(facilities2)
+names(facilities2)[5]<-"county"
+names(facilities2)[7]<-"state"
+# names(facilities2)[2]<-"county_population_2020"
+# names(facilities2)[3]<-"county_unemployment_rate_2020"
+
+keeps <- c("facility_county_fips","Population.2020","Unemployment_rate_2020","facility_name","facility_type","county","state","latest_inmate_population","total_inmate_cases","total_inmate_deaths")
+facilities2 <- facilities2[, names(facilities2) %in% keeps]
+
+
+
+## merge facilities and county_politics
+
+facilities <- inner_join(facilities2, county_politics, by = c("county", "state")) # join county politics and county facility data
+
+facilities<-facilities[!duplicated(facilities),] # remove duplicates
+
+pop_est2020$facility_county_fips <- as.numeric(pop_est2020$facility_county_fips)
+pop_est2020$Population.2020 <- as.numeric(pop_est2020$Population.2020)
+facilities2 <- inner_join(facilities, pop_est2020, by = "facility_county_fips")
+names(facilities2)[10] <- "county_population"
+names(facilities2)[9] <- "political_party"
+write.csv(facilities2, "facilities_edited.csv")
+```
+
+
+## Systems
+```{r}
+## read in state prison data
+
+systems <- read.csv("prisons/systems.csv")
+head(systems)
+systems <- systems[complete.cases(systems),]
+names(systems)[1] <- "state"
+
+
+
+## merge state prison data with state political data
+systems <- merge(systems, state_politics, by = "state")
+names(systems)
+
+keeps <- c("state", "total_inmate_deaths", "inmate_tests", "latest_inmate_population", "total_inmate_cases", "political_party", "lean_towards_political_party")
+
+systems <- systems[, names(systems) %in% keeps]
+names(systems)
+
+write.csv(systems, "systems_edited.csv")
+```
+
+
+
+
+
+
