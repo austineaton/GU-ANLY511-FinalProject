@@ -146,3 +146,15 @@ colleges_full <- colleges_full %>%
 colleges_full = colleges_full[!duplicated(colleges_full$ipeds_id), ]
 
 write.csv(colleges_full, "~/Desktop/colleges_cleaned.csv")
+
+
+################
+## Regressions too
+regression1 <- lm(case_rate ~ state+rank2020+enroll2020+ALWAYS+NEVER+winner, data = colleges_full)
+stats_schools <- summary(regression1)
+print(stats_schools)
+
+regression <- lm(case_rate ~ facility_type+state+latest_inmate_population+political_party+county_population, data = facilities)
+stats_prisons <- summary(regression)
+print(stats_prisons)
+
