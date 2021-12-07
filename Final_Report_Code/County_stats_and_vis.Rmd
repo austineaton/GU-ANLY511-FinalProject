@@ -1,0 +1,189 @@
+---
+title: "Visuals and Conditional Probabilities at the County Level"
+author: "Austin Eaton"
+date: "12/7/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(dplyr)
+library(ggplot2)
+```
+
+Read in file:
+```{r}
+county_data <- read.csv("counties_edited.csv")
+```
+
+
+```{r, results = 'hold'}
+print(paste0("Distribution of county populations that ALWAYS wear masks: "))
+summary(county_data$ALWAYS)
+
+## P(upper quartile of mask use | voted democrat)
+print(paste0("P(upper quartile of mask use | voted democrat) = ", 
+nrow(county_data[(county_data$ALWAYS > 0.6080)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(upper HALF of mask use | voted Democrat)
+print(paste0("P(upper HALF of mask use | voted Democrat) = ", 
+nrow(county_data[(county_data$ALWAYS > 0.5014)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(lower HALF of mask use | voted Republican)
+print(paste0("P(lower HALF of mask use | voted Republican) = ", 
+nrow(county_data[(county_data$ALWAYS < 0.5014)&(county_data$winner == "Republican"), ])/nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+print(paste0("Distribution of county populations that NEVER wear masks: "))
+summary(county_data$NEVER)
+
+## P(upper quartile of NEVER mask use | voted democrat)
+print(paste0("P(upper quartile of NEVER mask use | voted democrat) = ", 
+nrow(county_data[(county_data$NEVER > 0.1180)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(upper HALF of NEVER mask use | voted Democrat)
+print(paste0("P(upper HALF of NEVER mask use | voted Democrat) = ", 
+nrow(county_data[(county_data$NEVER > 0.0710)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(lower HALF of NEVER mask use | voted Republican)
+print(paste0("P(lower HALF of NEVER mask use | voted Republican) = ", 
+nrow(county_data[(county_data$NEVER < 0.0710)&(county_data$winner == "Republican"), ])/nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+
+## P(upper quartile of NEVER mask use | voted republican)
+print(paste0("P(upper quartile of NEVER mask use | voted republican) = ", 
+nrow(county_data[(county_data$NEVER > 0.1180)&(county_data$winner == "Republican"), ])/nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+## P(upper HALF of NEVER mask use | voted republican)
+print(paste0("P(upper HALF of NEVER mask use | county voted republican) = ", nrow(county_data[(county_data$NEVER > 0.0710)&(county_data$winner == "Republican"), ])/nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+## P(lower HALF of NEVER mask use | voted Democrat)
+print(paste0("P(lower HALF of NEVER mask use | county voted Democrat) = ", nrow(county_data[(county_data$NEVER < 0.0710)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+```
+```{r}
+county_data %>%
+  arrange(desc(case_rate)) %>%
+  mutate(winner = factor(winner)) %>%
+  ggplot(aes(x=case_rate, y=ALWAYS)) + #, size=case_rate, color = winner)) +
+    geom_point(aes(color = winner), size = 0.5) +
+    # scale_size(range = c(.05, 15), name="Case Rate") +
+    scale_color_manual(values = c("blue", "red")) +
+    labs(title = "Covid Cases by County", 
+         y = "Percent of County that ALWAYS wears Masks",
+         x = "COVID-19 Infection Rate",
+         color = "Political Lean",
+         subtitle = "Comparing Covid Case Rate to Percent of State that Wears Masks")
+```
+
+
+
+```{r, results = 'hold'}
+
+summary(county_data[county_data$winner == "Republican", "case_rate"])
+summary(county_data[county_data$winner == "Democrat", "case_rate"])
+
+
+library(ggplot2)
+plot<-ggplot(county_data, aes(winner, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Cases by Political Stance", 
+         y = "Covid Infection Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Cases by Political Stance", 
+         y = "Covid Infection Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate to how counties state voted in the 2020 election")
+  
+plot2
+```
+
+
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, percent_dead_from_covid)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Covid Mortality Rate per County", 
+         y = "Mortality Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid mortality rate to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, percent_dead_from_covid)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Covid Mortality Rate per County", 
+         y = "Mortality Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid mortality rate to how state voted in the 2020 election")
+  
+plot2
+```
+
+
+
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how state voted in the 2020 election")
+plot2
+```
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, NEVER)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that NEVER wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, NEVER)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that NEVER wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how state voted in the 2020 election")
+plot2
+```
+

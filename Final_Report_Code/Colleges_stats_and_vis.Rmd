@@ -1,0 +1,135 @@
+---
+title: "Visuals and Conditional Probabilies at the College Level"
+author: "Austin Eaton"
+date: "12/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+
+Read in file:
+```{r}
+colleges <- read.csv("colleges_edited.csv")
+```
+
+### Conditional Probabilities for Colleges
+
+```{r, results = 'hold'}
+
+print("Distribution of Covid case rates on college campuses: ")
+summary(colleges$case_rate)
+
+print(
+  "Distribution of the percent of county population that ALWAYS wears a mask, for counties with college campuses: "
+)
+summary(colleges$ALWAYS)
+
+
+## P(less than half of county with a college wears a mask | county voted Republican)
+print(
+  paste0(
+    "P(less than half of county with a college wears a mask | county voted Republican) = ",
+    nrow(colleges[(colleges$ALWAYS < 0.5) &
+                    (colleges$winner == "Republican"),]) / nrow(colleges[(colleges$winner == "Republican"),])
+  )
+)
+
+
+## P(low covid rate on campus (bottom 50 percentile) | county has high percent of mask wearers (top 50 percentile))
+print(
+  paste0(
+    "P(low covid rate on campus (bottom 50 percentile) | county has high percent of mask wearers (top 50 percentile)) = ",
+    nrow(colleges[(colleges$ALWAYS > 0.6805) &
+                    (colleges$case_rate < 0.04156),]) / nrow(colleges[(colleges$ALWAYS > 0.6805),])
+  )
+)
+
+
+## P(low covid rate on campus (lower quantile) | county has high percent of mask wearers (upper quantile))
+print(
+  paste0(
+    "P(low covid rate on campus (lower quantile) | county has high percent of mask wearers (upper quantile)) = ",
+    nrow(colleges[(colleges$ALWAYS > 0.7560) &
+                    (colleges$case_rate < 0.07609), ]) / nrow(colleges[(colleges$ALWAYS > 0.7560), ])
+  )
+)
+
+```
+
+
+## Visuals (EDA)
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(winner, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Covid Infection Rate on College Campuses", 
+         y = "Covid Infection Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate on college campuses to how county voted in the 2020 election")
+  
+plot
+```
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(winner, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Mask Usage in Counties with College Campuses", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage in counties with college campuses to how county voted in the 2020 election")
+  
+plot
+```
+
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(political_party, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Covid Infection Rate on College Campuses", 
+         y = "Covid Infection Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate on college campuses to how thier state voted in the 2020 election")
+  
+plot
+```
+
+
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(political_party, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Mask Usage in Counties with College Campuses", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage in counties with college campuses to how their state voted in the 2020 election")
+  
+plot
+```
+
+
+```{r}
+## scatter plot with different size points
+
+colleges %>%
+  arrange(desc(case_rate)) %>%
+  mutate(winner = factor(winner)) %>%
+  ggplot(aes(x=case_rate, y=ALWAYS, size=case_rate, color = winner)) +
+    geom_point(alpha=0.35) +
+    scale_size(range = c(.1, 20), name="Case Rate") +
+    scale_color_manual(values = c("blue", "red")) +
+    labs(title = "Covid Cases on College Campuses", 
+         y = "Percent of State that Always wears Masks",
+         x = "COVID-19 Case Rate at the University",
+         color = "Political Lean",
+         subtitle = "Comparing College Case Rate to Percent of State that Wears Masks")
+```
