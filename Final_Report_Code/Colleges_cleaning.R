@@ -8,10 +8,14 @@ library(ggplot2)
 
 
 # Load in data
-colleges <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/colleges.csv")
-attendance <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/college_attendance.csv", na.strings=c("","NA"))
-mask_use <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/MaskUse.csv")
-election_results <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/countypres_2000-2020.csv")
+colleges <- read.csv("../colleges/colleges.csv")
+attendance <- read.csv("../college_attendance.csv", na.strings=c("","NA"))
+mask_use <- read.csv("../Final_Report_Code/MaskUse.csv")
+election_results <- read.csv("../countypres_2000-2020.csv")
+# colleges <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/colleges.csv")
+# attendance <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/college_attendance.csv", na.strings=c("","NA"))
+# mask_use <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/MaskUse.csv")
+# election_results <- read.csv("~/Desktop/Papers/Georgetown/Fall 2021/ANLY 511/Final Project/countypres_2000-2020.csv")
 
 head(colleges)
 head(attendance)
@@ -146,4 +150,4 @@ colleges_full <- colleges_full %>%
 colleges_full = colleges_full[!duplicated(colleges_full$ipeds_id), ]
   
 
-write.csv(colleges_full, "~/Desktop/colleges_cleaned2.csv")
+# write.csv(colleges_full, "~/Desktop/colleges_cleaned2.csv")
