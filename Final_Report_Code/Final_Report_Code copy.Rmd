@@ -1,0 +1,880 @@
+---
+title: "Final Report"
+author: "Christopher Delaney, Austin Eaton, Clara Richter, Elise Rust"
+date: "12/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+# knitr::opts_chunk$set(
+#   tidy.opts = list(width.cutoff = 100), tidy = TRUE
+# )
+
+# knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+```
+```{r, include=FALSE}
+# options(width = 500)
+```
+
+### Libraries Used in Analysis
+```{r, results='hide'}
+library(tidyverse)
+library(ggplot2)
+library(readr)  # for read_csv
+library(knitr)  # for kable
+library(usmap)
+library(formatR)
+```
+
+
+# Data Cleaning
+## Colleges
+```{r}
+colleges <- read.csv("../colleges/colleges.csv")
+attendance <- read.csv("../college_attendance.csv", na.strings=c("","NA"))
+mask_use <- read.csv("../Final_Report_Code/MaskUse.csv")
+election_results <- read.csv("../countypres_2000-2020.csv")
+```
+
+```{r}
+head(colleges)
+head(attendance)
+head(mask_use)
+head(election_results)
+
+# Basic summary statistics and structure
+summary(colleges)
+summary(attendance)
+summary(mask_use)
+summary(election_results)
+
+## # 1. Fix column names
+names(attendance) <- c("rank2020", "rank2015", "college", "enroll2020", "enroll2015")
+names(election_results) <- c("year", "state", "state_abbr", "county", "fips", 
+                             "office", "candidate", "party", "candidatevotes",
+                             "totalvotes", "version", "mode")
+
+## 2. Remove unnecessary columns
+# colleges --> remove cases2021 (only interested in total cases) and 
+#               notes (extraneous), date (all on 5/26/2021)
+colleges <- colleges %>%
+  select(-c(cases_2021, notes, date))
+
+# mask_use --> remove fips code (not used for join), abr (not useful)
+mask_use <- mask_use %>%
+  select(-c(fips, abbr))
+
+# election_results --> remove state_abbr, fips, office, totalvotes, version, mode
+election_results <- election_results %>%
+  filter(year == 2020) %>%  # just 2020 results
+  select(-c(year, state_abbr, fips, office, totalvotes, version, mode))
+
+
+## 4. Missing/incorrect values
+# Colleges dataframe
+sum(is.na(colleges$cases) == TRUE)  
+sum(is.na(colleges$college) == TRUE)
+colleges$ipeds_id[colleges$ipeds_id=="laccd"] <- NA
+# No NULL values in colleges dataframe
+
+# Attendance dataframe
+sum(is.na(attendance)) # 31 NAs
+attendance$rank2015[attendance$rank2015=="N/A"] <- NA
+attendance$enroll2015[attendance$enroll2015=="Not Available"] <- NA
+attendance$enroll2015[attendance$enroll2015=="No Change"] <- NA
+
+sum(is.na(attendance)) # 20 NAs
+
+# Mask Use dataframe
+sum(is.na(mask_use)) # No NAs
+
+# ElectionResults dataframe
+sum(is.na(election_results)) # 1 NA
+election_results <- election_results %>%
+  drop_na(candidatevotes)
+
+# FIX NAs
+sum(is.na(attendance$enroll2020))
+# Southeastern Louisiana had 2020 enrollment of 13,490
+attendance$enroll2020[attendance$college == "Southeastern Louisiana University"] = 13490
+# Drop entirely blank rows at bottom
+attendance <- attendance %>%
+  drop_na(rank2020)
+
+# Remove extra whitespace so type conversion can happen
+attendance$enroll2020 = str_trim(attendance$enroll2020, side = c("both"))
+attendance$enroll2015 = str_trim(attendance$enroll2015, side = c("both"))
+attendance$rank2020 = str_trim(attendance$rank2020, side = c("both"))
+attendance$rank2015 = str_trim(attendance$rank2015, side = c("both"))
+
+# Remove commas from numbers
+attendance$enroll2020 <- as.numeric(gsub(",","",attendance$enroll2020))
+attendance$enroll2015 <- as.numeric(gsub(",","", attendance$enroll2015))
+
+## 3. Correct datatypes before median imputation
+str(colleges)
+str(attendance)
+
+colleges <- colleges %>%
+  mutate(ipeds_id = as.numeric(colleges$ipeds_id)) %>%
+  mutate(cases = as.numeric(cases))
+
+attendance <- attendance %>%
+  mutate(rank2020 = as.numeric(rank2020)) %>%
+  mutate(rank2015 = as.numeric(rank2015))
+
+
+# Median imputation for enroll_2015
+attendance$enroll2015[is.na(attendance$enroll2015)] <- median(attendance$enroll2015, na.rm = TRUE)
+
+sum(is.na(attendance$enroll2015))
+
+
+###### Clean Election Results further to prep for join
+# Fix capitalization of election results
+election_results <- election_results %>%
+  mutate(state = str_to_title(state)) %>%
+  mutate(county = str_to_title(county)) %>%
+  mutate(candidate = str_to_title(candidate)) %>%
+  mutate(party = str_to_title(party))
+
+head(election_results)
+
+# Calculate one winner for each county
+election_results <- election_results %>%
+  group_by(county,state) %>%
+  mutate(winner = party[which.max(candidatevotes)])
+
+# Keep only row of winner for each county
+election_results <- election_results %>%
+  group_by(county, state) %>%
+  filter(party == winner) %>%
+  select(-c(candidate, party, candidatevotes))
+
+head(election_results)
+
+
+##################
+# Join
+colleges_full <- inner_join(colleges, attendance, by = "college" )
+colleges_full <- left_join(colleges_full, mask_use, by = c("county", "state"))
+colleges_full <- left_join(colleges_full, election_results, by = c("county", "state"))
+head(colleges_full)
+str(colleges_full)
+
+
+## Calculate "rate" parameter and percent change in enrollment
+colleges_full <- colleges_full %>%
+  mutate(perc_enroll_change = (enroll2020 - enroll2015)/enroll2015) %>%
+  mutate(case_rate = cases/enroll2020)
+
+# Remove any duplicate rows
+colleges_full = colleges_full[!duplicated(colleges_full$ipeds_id), ]
+  
+
+# write.csv(colleges_full, "~/Desktop/colleges_cleaned2.csv")
+
+```
+
+
+
+
+
+## Mask Use
+```{r,results = 'hold', results='markup'}
+# read in county mask use data
+myfile <- "https://raw.githubusercontent.com/nytimes/covid-19-data/master/mask-use/mask-use-by-county.csv"
+MaskUse <- read_csv(myfile)
+
+# assigning new column name
+colnames(MaskUse)[1] <- "fips"
+
+fipsDF <- fips_info(MaskUse$fips)
+head(fipsDF)
+
+MaskUseDF <- merge(x = MaskUse, y = fipsDF, by = "fips", all = TRUE)
+head(MaskUseDF)
+
+# assigning new column name
+colnames(MaskUseDF)[7] <- "state"
+
+MaskUseDF <- MaskUseDF[-8]
+
+MaskUseDF <- MaskUseDF %>%
+    mutate(county = str_remove_all(county, " County"))
+
+MaskUseDF <- na.omit(MaskUseDF) 
+
+# write.csv(MaskUseDF,"MaskUseClean.csv", row.names = FALSE)
+```
+
+
+
+
+
+# Exploratory Data Analysis
+
+## College Data
+Read in file:
+```{r}
+colleges <- read.csv("colleges_edited.csv")
+```
+
+### Conditional Probabilities for College data
+
+```{r, results = 'hold'}
+
+print("Distribution of Covid case rates on college campuses: ")
+summary(colleges$case_rate)
+
+print("Distribution of the percent of county population that ALWAYS wears a mask, 
+      for counties with college campuses: ")
+summary(colleges$ALWAYS)
+
+
+## P(less than half of county with a college wears a mask | county voted Republican)
+print(
+  paste0(
+    "P(less than half of county with a college wears a mask | county voted Republican) = ",
+    nrow(colleges[(colleges$ALWAYS < 0.5) &
+                    (colleges$winner == "Republican"),]) / nrow(colleges[(colleges$winner == "Republican"),])))
+
+
+## P(low covid rate on campus (bottom 50 percentile) | county has high percent of mask wearers (top 50 percentile))
+print(
+  paste0(
+    "P(low covid rate on campus (bottom 50 percentile) | county has high percent of mask wearers (top 50 percentile)) = ",
+    nrow(colleges[(colleges$ALWAYS > 0.6805) &
+                    (colleges$case_rate < 0.04156),]) / nrow(colleges[(colleges$ALWAYS > 0.6805),])))
+
+
+## P(low covid rate on campus (lower quantile) | county has high percent of mask wearers (upper quantile))
+print(
+  paste0(
+    "P(low covid rate on campus (lower quantile) | county has high percent of mask wearers (upper quantile)) = ",
+    nrow(colleges[(colleges$ALWAYS > 0.7560) &
+                    (colleges$case_rate < 0.07609), ]) / nrow(colleges[(colleges$ALWAYS > 0.7560), ])))
+
+```
+
+
+### Visuals for College Data
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(winner, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Covid Infection Rate on College Campuses", 
+         y = "Covid Infection Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate on college campuses to how county voted in the 2020 election")
+  
+plot
+```
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(winner, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Mask Usage in Counties with College Campuses", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage in counties with college campuses to how county voted in the 2020 election")
+  
+plot
+```
+
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(political_party, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Covid Infection Rate on College Campuses", 
+         y = "Covid Infection Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate on college campuses to how thier state voted in the 2020 election")
+  
+plot
+```
+
+
+```{r, results = 'hold'}
+plot<-ggplot(colleges, aes(political_party, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Mask Usage in Counties with College Campuses", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage in counties with college campuses to how their state voted in the 2020 election")
+  
+plot
+```
+
+
+```{r}
+## scatter plot with different size points
+
+colleges %>%
+  arrange(desc(case_rate)) %>%
+  mutate(winner = factor(winner)) %>%
+  ggplot(aes(x=case_rate, y=ALWAYS, size=case_rate, color = winner)) +
+    geom_point(alpha=0.35) +
+    scale_size(range = c(.1, 20), name="Case Rate") +
+    scale_color_manual(values = c("blue", "red")) +
+    labs(title = "Covid Cases on College Campuses", 
+         y = "Percent of State that Always wears Masks",
+         x = "COVID-19 Case Rate at the University",
+         color = "Political Lean",
+         subtitle = "Comparing College Case Rate to Percent of State that Wears Masks")
+```
+
+## County Data
+Read in file:
+```{r}
+county_data <- read.csv("counties_edited.csv")
+```
+
+### Conditional Probabilities for County data
+```{r, results = 'hold'}
+print(paste0("Distribution of county populations that ALWAYS wear masks: "))
+summary(county_data$ALWAYS)
+
+## P(upper quartile of mask use | voted democrat)
+print(paste0("P(upper quartile of mask use | voted democrat) = ", 
+nrow(county_data[(county_data$ALWAYS > 0.6080)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(upper HALF of mask use | voted Democrat)
+print(paste0("P(upper HALF of mask use | voted Democrat) = ", 
+nrow(county_data[(county_data$ALWAYS > 0.5014)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(lower HALF of mask use | voted Republican)
+print(paste0("P(lower HALF of mask use | voted Republican) = ", 
+             nrow(county_data[(county_data$ALWAYS < 0.5014)&(county_data$winner == "Republican"), ])
+             /nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+print(paste0("Distribution of county populations that NEVER wear masks: "))
+summary(county_data$NEVER)
+
+## P(upper quartile of NEVER mask use | voted democrat)
+print(paste0("P(upper quartile of NEVER mask use | voted democrat) = ", 
+             nrow(county_data[(county_data$NEVER > 0.1180)&(county_data$winner == "Democrat"), ])
+             /nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(upper HALF of NEVER mask use | voted Democrat)
+print(paste0("P(upper HALF of NEVER mask use | voted Democrat) = ", 
+             nrow(county_data[(county_data$NEVER > 0.0710)&(county_data$winner == "Democrat"), ])
+             /nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+
+## P(lower HALF of NEVER mask use | voted Republican)
+print(paste0("P(lower HALF of NEVER mask use | voted Republican) = ", 
+             nrow(county_data[(county_data$NEVER < 0.0710)&(county_data$winner == "Republican"), ])
+             /nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+
+## P(upper quartile of NEVER mask use | voted republican)
+print(paste0("P(upper quartile of NEVER mask use | voted republican) = ", 
+             nrow(county_data[(county_data$NEVER > 0.1180)&(county_data$winner == "Republican"), ])
+             /nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+## P(upper HALF of NEVER mask use | voted republican)
+print(paste0("P(upper HALF of NEVER mask use | county voted republican) = ", 
+             nrow(county_data[(county_data$NEVER > 0.0710)&(county_data$winner == "Republican"), ])
+             /nrow(county_data[(county_data$winner == "Republican"), ])))
+
+
+## P(lower HALF of NEVER mask use | voted Democrat)
+print(paste0("P(lower HALF of NEVER mask use | county voted Democrat) = ", nrow(county_data[(county_data$NEVER < 0.0710)&(county_data$winner == "Democrat"), ])/nrow(county_data[(county_data$winner == "Democrat"), ])))
+
+```
+
+### Visuals for County data
+```{r}
+county_data %>%
+  arrange(desc(case_rate)) %>%
+  mutate(winner = factor(winner)) %>%
+  ggplot(aes(x=case_rate, y=ALWAYS)) + #, size=case_rate, color = winner)) +
+    geom_point(aes(color = winner), size = 0.5) +
+    # scale_size(range = c(.05, 15), name="Case Rate") +
+    scale_color_manual(values = c("blue", "red")) +
+    labs(title = "Covid Cases by County", 
+         y = "Percent of County that ALWAYS wears Masks",
+         x = "COVID-19 Infection Rate",
+         color = "Political Lean",
+         subtitle = "Comparing Covid Case Rate to Percent of State that Wears Masks")
+```
+
+
+
+```{r, results = 'hold'}
+
+summary(county_data[county_data$winner == "Republican", "case_rate"])
+summary(county_data[county_data$winner == "Democrat", "case_rate"])
+
+
+library(ggplot2)
+plot<-ggplot(county_data, aes(winner, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Cases by Political Stance", 
+         y = "Covid Infection Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, case_rate)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Cases by Political Stance", 
+         y = "Covid Infection Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid infection rate to how counties state voted in the 2020 election")
+  
+plot2
+```
+
+
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, percent_dead_from_covid)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "Covid Mortality Rate per County", 
+         y = "Mortality Rate",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid mortality rate to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, percent_dead_from_covid)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "Covid Mortality Rate per County", 
+         y = "Mortality Rate",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing covid mortality rate to how state voted in the 2020 election")
+  
+plot2
+```
+
+
+
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, ALWAYS)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that ALWAYS wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how state voted in the 2020 election")
+plot2
+```
+```{r, results = 'hold'}
+plot<-ggplot(county_data, aes(winner, NEVER)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that NEVER wears masks",
+         x = "How County Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how county voted in the 2020 election")
+  
+plot
+
+plot2<-ggplot(county_data, aes(political_party, NEVER)) + 
+  geom_boxplot(fill = c("#0096fa", "#fa1100")) +
+  scale_x_discrete(labels = c('Democrat', 'Republican')) +
+  labs(title = "County Mask Users by Political Stance", 
+         y = "Percent that NEVER wears masks",
+         x = "How State Voted in 2020",
+         color = "Political Lean",
+         subtitle = "Comparing mask usage to how state voted in the 2020 election")
+plot2
+```
+
+
+
+
+# Confidence Intervals 
+## Colleges
+```{r}
+######## 1. Colleges
+# Load in data
+colleges_full <- read.csv("../colleges/colleges_cleaned2.csv")
+
+# Examine
+head(colleges_full)
+str(colleges_full)
+
+###### EDA
+boxplot(colleges_full$cases, main = "Colleges Total Cases")
+
+boxplot(colleges_full$case_rate,
+        main = "Colleges Normalized Case Rate")
+
+### Create Size Subgroups
+summary(colleges_full$enroll2020)
+small_schools <- colleges_full$case_rate[colleges_full$enroll2020 <= 18000]
+big_schools <- colleges_full$case_rate[colleges_full$enroll2020 > 18000]
+
+boxplot(small_schools, big_schools,
+        main = "College COVID-19 Case Rates For Small vs. Large Schools",
+        names = c("Small Schools", "Large Schools"))
+
+### Create Mask Wearing Subgroups
+summary(colleges_full$ALWAYS)
+high_mask_usage <- colleges_full$case_rate[colleges_full$ALWAYS > 0.5]
+low_mask_usage <- colleges_full$case_rate[colleges_full$ALWAYS <= 0.5]
+# Remove NAs
+high_mask_usage<-high_mask_usage[!is.na(high_mask_usage)]
+low_mask_usage<-low_mask_usage[!is.na(low_mask_usage)]
+
+
+boxplot(low_mask_usage, high_mask_usage,
+        main = "College COVID-19 Case Rates For Schools in Counties with Low vs. High Mask Usage",
+        names = c("Low Mask Usage", "High Mask Usage"))
+
+
+### Create Voting Subgroups
+red_counties <- colleges_full$case_rate[colleges_full$winner == "Democrat"]
+blue_counties <- colleges_full$case_rate[colleges_full$winner == "Republican"]
+# Remove NAs
+red_counties<-red_counties[!is.na(red_counties)]
+blue_counties<-blue_counties[!is.na(blue_counties)]
+
+
+
+boxplot(red_counties, blue_counties,
+        main = "College COVID-19 Case Rates For Schools Based on 2020 Election Results",
+        names = c("Republican-Voting Counties", "Democrat-Voting Counties"))
+
+
+
+######### Confidence Intervals
+# Difference between small vs. large schools
+school_size_bootstrap <- rep(NA,100000) 
+
+for (j in 1:100000) {
+  boot.large <- mean(sample(big_schools, length(big_schools), replace = T)) 
+  boot.small <- mean(sample(small_schools, length(small_schools), replace = T)) 
+  school_size_bootstrap[j] <- boot.large - boot.small #the difference
+}
+
+head(school_size_bootstrap)
+mean(school_size_bootstrap) #bootstrap mean difference
+
+CI <- quantile(school_size_bootstrap, c(.05, .95))
+CI
+
+
+
+# Difference between schools in counties that wear masks and those that don't 
+mask_bootstrap <- rep(NA,100000) 
+
+for (j in 1:100000) {
+  mask_high <- mean(sample(high_mask_usage, length(high_mask_usage), replace = T)) 
+  mask_low <- mean(sample(low_mask_usage, length(low_mask_usage), replace = T)) 
+  mask_bootstrap[j] <- mask_high - mask_low #the difference
+}
+
+head(mask_bootstrap)
+mean(mask_bootstrap) #bootstrap mean difference
+
+CI_mask <- quantile(mask_bootstrap, c(.05, .95))
+CI_mask
+
+
+# Difference between schools in counties that wear masks and those that don't 
+election_bootstrap <- rep(NA,100000) 
+
+for (j in 1:100000) {
+  election_red <- mean(sample(red_counties, length(red_counties), replace = T)) 
+  election_blue <- mean(sample(blue_counties, length(blue_counties), replace = T)) 
+  election_bootstrap[j] <- election_red - election_blue #the difference
+}
+
+head(election_bootstrap)
+mean(election_bootstrap) #bootstrap mean difference
+
+CI_election <- quantile(election_bootstrap, c(.05, .95))
+CI_election
+
+```
+
+## Prisons
+```{r}
+# #########################
+# ##### Prison Data
+# 
+# # Load in data
+# systems <- read.csv("../prisons/systems_edited.csv")
+# facilities <- read.csv("../prisons/facilities_edited.csv")
+# 
+# head(systems)
+# head(facilities)
+# 
+# str(systems)
+# str(facilities)
+# facilities$facility_type = as.factor(facilities$facility_type)
+# facilities <- facilities %>%
+#   mutate(case_rate = total_inmate_cases/latest_inmate_population) %>%
+#   filter(case_rate < 1)
+# 
+# ### Confidence Intervals
+# levels(facilities$facility_type)
+# 
+# # Break up data into subgroups
+# state_prisons <- facilities$case_rate[facilities$facility_type == c("State halfway house", "State work camp",
+#                                                "State juvenile detention", "State prison", "State facility",
+#                                                "State rehabilitation center")]
+# federal_prisons <- facilities$case_rate[facilities$facility_type == c("Detention center", "Juvenile detention at jail",
+#                                                  "Federal halfway house", "Low-security work release", "Federal prison",
+#                                                  "Reservation jail", "Jail")]
+# state_prisons<-state_prisons[!is.na(state_prisons)]
+# federal_prisons<-federal_prisons[!is.na(federal_prisons)]
+# 
+# 
+# 
+# small_prisons <- facilities$case_rate[facilities$latest_inmate_population < 580]
+# big_prisons <- facilities$case_rate[facilities$latest_inmate_population >= 580]
+# # Remove NAs
+# small_prisons<-small_prisons[!is.na(small_prisons)]
+# big_prisons<-big_prisons[!is.na(big_prisons)]
+# 
+# 
+# 
+# red_prisons <- facilities$case_rate[facilities$political_party == "Republican"]
+# blue_prisons <- facilities$case_rate[facilities$political_party == "Democrat"]
+# red_prisons<-red_prisons[!is.na(red_prisons)]
+# blue_prisons<-blue_prisons[!is.na(blue_prisons)]
+# 
+# red_prisons_systems <- systems$case_rate[systems$political_party == "R"]
+# blue_prisons_systems <- systems$case_rate[systems$political_party == "D"]
+# 
+# # 1. Mean case numbers between different types of prisons
+# prison_type_bootstrap <- rep(NA,100000)
+# 
+# for (j in 1:100000) {
+#   boot.state <- mean(sample(state_prisons, length(state_prisons), replace = T))
+#   boot.federal <- mean(sample(federal_prisons, length(federal_prisons), replace = T))
+#   prison_type_bootstrap[j] <- boot.state - boot.federal #the difference
+# }
+# 
+# head(prison_type_bootstrap)
+# mean(prison_type_bootstrap) #bootstrap mean difference
+# 
+# CI_prison1 <- quantile(prison_type_bootstrap, c(.05, .95))
+# CI_prison1
+# 
+# # 2. Mean case numbers between different sized prisons
+# prison_type_bootstrap2 <- rep(NA,100000)
+# 
+# for (j in 1:100000) {
+#   boot.small <- mean(sample(small_prisons, length(small_prisons), replace = T))
+#   boot.big <- mean(sample(big_prisons, length(big_prisons), replace = T))
+#   prison_type_bootstrap2[j] <- boot.big - boot.small #the difference
+# }
+# 
+# head(prison_type_bootstrap2)
+# mean(prison_type_bootstrap2) #bootstrap mean difference
+# 
+# CI_prison2 <- quantile(prison_type_bootstrap2, c(.05, .95))
+# CI_prison2
+# 
+# # 3. Mean case numbers between prisons in Red vs. Blue states - facilities.csv
+# prison_type_bootstrap3 <- rep(NA,100000)
+# 
+# for (j in 1:100000) {
+#   boot.red <- mean(sample(red_prisons, length(red_prisons), replace = T))
+#   boot.blue <- mean(sample(blue_prisons, length(blue_prisons), replace = T))
+#   prison_type_bootstrap3[j] <- boot.red - boot.blue #the difference
+# }
+# 
+# head(prison_type_bootstrap3)
+# mean(prison_type_bootstrap3) #bootstrap mean difference
+# 
+# CI_prison3 <- quantile(prison_type_bootstrap3, c(.05, .95))
+# CI_prison3
+# 
+# # 4. Mean case numbers between prisons in Red vs. Blue states - systems.csv
+# prison_type_bootstrap4 <- rep(NA,100000)
+# 
+# for (j in 1:100000) {
+#   boot.red.systems <- mean(sample(red_prisons_systems, length(red_prisons_systems), replace = T))
+#   boot.blue.systems <- mean(sample(blue_prisons_systems, length(blue_prisons_systems), replace = T))
+#   prison_type_bootstrap4[j] <- boot.red.systems - boot.blue.systems#the difference
+# }
+# 
+# head(prison_type_bootstrap4)
+# mean(prison_type_bootstrap4) #bootstrap mean difference
+# 
+# CI_prison4 <- quantile(prison_type_bootstrap4, c(.05, .95))
+# CI_prison4
+# 
+# 
+# 
+# ##########################
+# ## Visualize
+# 
+# school_results <- data.frame(school = c(1, 2, 3),
+#                    zero    = c(0, 0, 0),
+#                    center   = c(0.005595, -0.007355, -0.034185),
+#                    CI       = c(0.010125, 0.010615, 0.025195))
+# print(school_results)
+# 
+# CI_schools <- ggplot(school_results, aes(school, center)) +
+#   geom_point(color = "red") +
+#   geom_point(aes(x = school, y = zero)) +
+#   geom_errorbar(aes(ymin = center - CI, ymax = center + CI)) +
+#   labs(x = "",
+#        y = "Difference of Mean COVID-19 Case Rates",
+#        title = "Confidence Intervals of Diff. of Means across School Subgroups") +
+#   theme_classic()
+# 
+# print(CI_schools)
+# 
+# 
+# # Prison data
+# prison_results <- data.frame(tests = c(1, 2, 3),
+#                              zero    = c(0, 0, 0),
+#                              center   = c(0.005595, 0.05542, 0.04157),
+#                              CI       = c(-0.017795, 0.02133, 0.02111))
+# print(school_results)
+# 
+# CI_prisons <- ggplot(prison_results, aes(tests, center)) +
+#   geom_point(color = "red") +
+#   geom_point(aes(x = tests, y = zero)) +
+#   geom_errorbar(aes(ymin = center - CI, ymax = center + CI)) +
+#   labs(x = "",
+#        y = "Difference of Mean COVID-19 Case Rates",
+#        title = "Confidence Intervals of Diff. of Means across Prison Subgroups") +
+#   theme_classic()
+# 
+# print(CI_prisons)
+
+```
+
+
+# Hypothesis Testing
+```{r}
+#Uploading data, cleaning county census data population estimates & mask data
+#-------------------------------------------------------------------------------------
+countyDeaths <- read.csv('../live/us-counties.csv')#deaths by county dataset
+countyPopulations <- read.csv('PopulationEstimates_csv.csv')#populations by county dataset
+masks <- read.csv('../mask-use/mask-use-by-county.csv')#mask usage dataset
+names <- countyPopulations[1, ]
+names[1] <- "fips" #Changing name for merging
+names[1,8] <- "Population"
+countyPopulations <- countyPopulations[-c(1:2), ]
+names(countyPopulations) <- names
+countyPopulations$fips <- as.numeric(countyPopulations$fips) #converting fips codes to numeric for converting
+maskNames <- names(masks)
+maskNames[1] <- "fips" #Changing name for merging
+names(masks) <- maskNames
+
+#Merging based on fips code, selecting key variables, cleaning resulting dataset
+#-------------------------------------------------------------------------------------
+df <- merge(countyPopulations, countyDeaths, by = "fips" ) %>% 
+  select ('fips', 'state', 'Area name', 'Population', 'confirmed_cases', 'confirmed_deaths') 
+df$Population <- gsub("\\,", "", df$Population) #removing commas from population data
+df$Population <- as.numeric(df$Population)
+df$confirmed_deaths <- as.numeric(df$confirmed_deaths)
+df$confirmed_cases <- as.numeric(df$confirmed_cases)
+df <- df %>% mutate(case_rate = confirmed_cases/Population, death_rate = confirmed_deaths/Population) #calcualting case rate
+newdf <- merge(df, masks, by = "fips")
+noMaskCounties <- newdf %>% arrange(desc(NEVER, RARELY)) %>% drop_na() %>% slice(1:30) %>% mutate(label = "Low Mask Usage") #Selecting 30 lowest mask using counties with sufficient data
+maskCounties <- newdf %>% arrange(desc(ALWAYS, FREQUENTLY)) %>% drop_na() %>% slice(1:30) %>% mutate(label = "High Mask Usage")#Selecting 30 highest mask using counties with sufficient data
+finalDF <- rbind(noMaskCounties, maskCounties)
+View(finalDF)
+
+#Creating visualizations
+#------------------------------------------------------------------------------------
+finalDF %>% ggplot(aes(x = label, y = death_rate, fill = label)) + geom_boxplot() +
+  labs(title = "Death Rates by Counties with Differing Mask Usage", x = "Mask Usage", y = "Death Rate") +
+  scale_y_continuous(labels = scales::percent)
+finalDF %>% ggplot(aes(x = label, y = case_rate, fill = label)) + geom_boxplot() +
+  labs(title = "Case Rates by Counties with Differing Mask Usage", x = "Mask Usage", y = "Case Rate") +
+  scale_y_continuous(labels = scales::percent)
+
+
+#T-Test
+#-------------------------------------------------------------------------------------
+freqMaskDR <- subset(finalDF, select=death_rate, subset=label=="High Mask Usage", drop=T)
+rarelyMaskDR <- subset(finalDF, select=death_rate, subset=label=="Low Mask Usage", drop=T)
+t.test(rarelyMaskDR, freqMaskDR, alt="greater")
+
+freqMaskCR <- subset(finalDF, select=case_rate, subset=label=="High Mask Usage", drop=T)
+rarelyMaskCR <- subset(finalDF, select=case_rate, subset=label=="Low Mask Usage", drop=T)
+t.test(rarelyMaskCR, freqMaskCR, alt="greater")
+
+
+#CHI-SQR Test
+#-------------------------------------------------------------------------------------
+#DEATH RATE:
+chisqDF <- finalDF %>% select(label, death_rate)
+
+diffMean = function(chisqDF) { 
+  agg = aggregate(death_rate ~ label, data = chisqDF, FUN = mean) 
+  return(agg$death_rate[1] - agg$death_rate[2]) #xbar_c - xbar_t 
+}
+myPerm <- function(){
+  dfCopy = chisqDF
+  dfCopy$death_rate <- dfCopy$death_rate[sample(60,60,replace=F)]
+  diffMean(dfCopy)
+}
+stat = diffMean(chisqDF)
+test = replicate(1000, myPerm())
+mean(test < stat) #p-value
+
+#Frequency distribution visualization
+hist(test, main = "Null Distribution, Difference of Means", prob = T, col = "cadetblue")
+abline(v = stat,col = 2, lwd = 2)
+
+#----
+
+#CASE RATE:
+chisqDF <- finalDF %>% select(label, case_rate)
+
+diffMean = function(chisqDF) { 
+  agg = aggregate(case_rate ~ label, data = chisqDF, FUN = mean) 
+  return(agg$case_rate[1] - agg$case_rate[2]) #xbar_c - xbar_t 
+}
+myPerm <- function(){
+  dfCopy = chisqDF
+  dfCopy$case_rate <- dfCopy$case_rate[sample(60,60,replace=F)]
+  diffMean(dfCopy)
+}
+stat = diffMean(chisqDF)
+test = replicate(1000, myPerm())
+mean(test < stat) #p-value
+
+#Frequency distribution visualization
+range <- c(-0.04, 0.03)
+hist(test, main = "Null Distribution, Difference of Means", prob = T, col = "cadetblue", xlim = range)
+abline(v = stat,col = 2, lwd = 2)
+
+
+
+```
+
