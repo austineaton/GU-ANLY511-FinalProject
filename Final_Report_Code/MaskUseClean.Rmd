@@ -1,0 +1,65 @@
+---
+title: "Mask Use"
+author: "Clara Richter"
+date: "11/26/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readr)  # for read_csv
+library(knitr)  # for kable
+library(usmap)
+library(tidyverse)
+
+myfile <- "https://raw.githubusercontent.com/nytimes/covid-19-data/master/mask-use/mask-use-by-county.csv"
+
+MaskUse <- read_csv(myfile)
+
+# assigning new column name
+colnames(MaskUse)[1] <- "fips"
+
+head(MaskUse)
+```
+
+```{r}
+fipsDF <- fips_info(MaskUse$fips)
+head(fipsDF)
+```
+
+
+```{r}
+MaskUseDF <- merge(x = MaskUse, y = fipsDF, by = "fips", all = TRUE)
+head(MaskUseDF)
+```
+
+
+```{r}
+# assigning new column name
+colnames(MaskUseDF)[7] <- "state"
+
+MaskUseDF <- MaskUseDF[-8]
+```
+
+
+```{r}
+MaskUseDF <- MaskUseDF %>%
+    mutate(county = str_remove_all(county, " County"))
+```
+
+```{r}
+sum(is.na(MaskUseDF))
+MaskUseDF <- na.omit(MaskUseDF) 
+sum(is.na(MaskUseDF))
+```
+
+
+```{r}
+write.csv(MaskUseDF,"MaskUseClean.csv", row.names = FALSE)
+```
