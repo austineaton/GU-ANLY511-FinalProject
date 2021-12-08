@@ -285,7 +285,7 @@ prison_small <- facilities %>%
   drop_na()
 cor(prison_small)
 
-# Regression of colleges
+# Regression of prisons
 regression_prisons <- lm(case_rate ~ facility_type+state+latest_inmate_population+political_party+county_population, data = facilities)
 stats_prisons <- summary(regression_prisons)
 print(stats_prisons)
